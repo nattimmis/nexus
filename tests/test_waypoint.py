@@ -90,15 +90,21 @@ class TestWaypoint:
 
     def test_waypoint_hash_computation(self):
         """Test waypoint hash computation."""
-        waypoint1 = Waypoint(url='https://example.com')
-        waypoint1.add_action(ActionType.CLICK, selector='#button')
+        fixed_time = datetime(2024, 1, 1, 12, 0, 0)
+
+        waypoint1 = Waypoint(url='https://example.com', created_at=fixed_time)
+        action1 = WaypointAction(action_type=ActionType.CLICK, selector='#button',
+                                timestamp=fixed_time)
+        waypoint1.actions.append(action1)
         hash1 = waypoint1.compute_hash()
 
-        waypoint2 = Waypoint(url='https://example.com')
-        waypoint2.add_action(ActionType.CLICK, selector='#button')
+        waypoint2 = Waypoint(url='https://example.com', created_at=fixed_time)
+        action2 = WaypointAction(action_type=ActionType.CLICK, selector='#button',
+                                timestamp=fixed_time)
+        waypoint2.actions.append(action2)
         hash2 = waypoint2.compute_hash()
 
-        # Same content should produce same hash
+        # Same content (including timestamps) should produce same hash
         assert hash1 == hash2
 
     def test_waypoint_hash_differs_on_change(self):

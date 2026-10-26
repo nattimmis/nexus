@@ -14,6 +14,10 @@ from nexus.waypoint import Waypoint, WaypointAction, WaypointAssertion
 from nexus.recorder import NavigationRecorder
 from nexus.blockchain import IPFSBlockchain
 from nexus.playback import NavigationPlayback
+from nexus.selectors import SelectorChain, SelectorCandidate, SelectorStrategy
+from nexus.verigraph import Verigraph
+from nexus.versioning import WaypointVersionChain
+from nexus.store import get_connection, db_session
 
 __all__ = [
     'Waypoint',
@@ -22,4 +26,11 @@ __all__ = [
     'NavigationRecorder',
     'IPFSBlockchain',
     'NavigationPlayback',
+    'SelectorChain',
+    'SelectorCandidate',
+    'SelectorStrategy',
+    'Verigraph',
+    'WaypointVersionChain',
+    'get_connection',
+    'db_session',
 ]

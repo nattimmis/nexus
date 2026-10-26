@@ -1,0 +1,21 @@
+# Nexus Crawler Allowlist Configuration
+# Copy this to sites.yaml and edit to specify approved domains and paths.
+# The crawler only operates on sites explicitly listed here.
+
+sites:
+  # Example: Crawl an e-commerce site
+  # - name: example-shop
+  #   base_url: https://example.com
+  #   allow_paths: ["/", "/products", "/cart"]
+  #   excluded_paths: ["/checkout", "/account", "/login", "/admin"]
+  #   max_depth: 2
+  #   max_pages: 25
+  #   skip_submit_buttons: true
+
+  # To enable crawling, add your own site configuration here:
+  # - name: your-site-name
+  #   base_url: https://your-domain.com
+  #   allow_paths: ["/"]
+  #   excluded_paths: []
+  #   max_depth: 1
+  #   max_pages: 10

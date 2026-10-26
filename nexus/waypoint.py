@@ -12,6 +12,8 @@ from enum import Enum
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
 
+from nexus.selectors import SelectorChain
+
 
 class ActionType(str, Enum):
     """Types of navigation actions."""
@@ -44,13 +46,17 @@ class WaypointAction(BaseModel):
     Attributes:
         action_type: Type of action (click, type, navigate, etc.).
         selector: CSS/XPath selector for the target element (optional).
+        selector_chain: Multi-candidate selector chain with fallbacks (optional).
         value: Value for type/fill actions (optional).
+        form_fields: Dict of selectors to values for FILL_FORM actions (optional).
         timeout: Maximum time to wait for action (seconds).
         timestamp: When the action was recorded.
     """
     action_type: ActionType
     selector: Optional[str] = None
+    selector_chain: Optional[SelectorChain] = None
     value: Optional[str] = None
+    form_fields: Optional[Dict[str, str]] = None
     timeout: float = 10.0
     timestamp: datetime = Field(default_factory=datetime.utcnow)
 
@@ -87,7 +93,9 @@ class Waypoint(BaseModel):
         actions: List of actions performed.
         assertions: List of assertions to verify.
         description: Human-readable description.
-        version: Waypoint format version for future compatibility.
+        version: Waypoint format version (kept as '1.0' for backward-compat).
+        parent_hash: SHA-256 hash of parent waypoint in version chain (optional).
+        chain_version: Version number in the chain (for tracking revisions).
         created_at: Timestamp when waypoint was created.
         hash: SHA-256 hash of waypoint content (for integrity).
         ipfs_hash: IPFS hash if stored on blockchain.
@@ -98,6 +106,8 @@ class Waypoint(BaseModel):
     assertions: List[WaypointAssertion] = Field(default_factory=list)
     description: str = ''
     version: str = '1.0'
+    parent_hash: Optional[str] = None
+    chain_version: int = 1
     created_at: datetime = Field(default_factory=datetime.utcnow)
     hash: str = ''
     ipfs_hash: Optional[str] = None
@@ -109,21 +119,16 @@ class Waypoint(BaseModel):
         """
         Convert waypoint to dictionary (for hashing and JSON serialization).
 
+        New fields (selector_chain, parent_hash, chain_version, form_fields)
+        are only emitted when non-default, preserving hash stability for
+        existing pinned waypoints.
+
         Returns:
             Dictionary representation with serialized timestamps.
         """
-        return {
+        result = {
             'url': self.url,
-            'actions': [
-                {
-                    'action_type': a.action_type,
-                    'selector': a.selector,
-                    'value': a.value,
-                    'timeout': a.timeout,
-                    'timestamp': a.timestamp.isoformat(),
-                }
-                for a in self.actions
-            ],
+            'actions': [],
             'assertions': [
                 {
                     'assertion_type': a.assertion_type,
@@ -137,6 +142,27 @@ class Waypoint(BaseModel):
             'version': self.version,
             'created_at': self.created_at.isoformat(),
         }
+
+        for a in self.actions:
+            action_dict = {
+                'action_type': a.action_type,
+                'selector': a.selector,
+                'value': a.value,
+                'timeout': a.timeout,
+                'timestamp': a.timestamp.isoformat(),
+            }
+            if a.selector_chain is not None and a.selector_chain.candidates:
+                action_dict['selector_chain'] = a.selector_chain.model_dump(mode='json')
+            if a.form_fields is not None:
+                action_dict['form_fields'] = a.form_fields
+            result['actions'].append(action_dict)
+
+        if self.parent_hash is not None:
+            result['parent_hash'] = self.parent_hash
+        if self.chain_version != 1:
+            result['chain_version'] = self.chain_version
+
+        return result
 
     def compute_hash(self) -> str:
         """
@@ -178,16 +204,20 @@ class Waypoint(BaseModel):
         """
         data = json.loads(json_str)
 
-        actions = [
-            WaypointAction(
+        actions = []
+        for a in data.get('actions', []):
+            action = WaypointAction(
                 action_type=a['action_type'],
                 selector=a.get('selector'),
                 value=a.get('value'),
                 timeout=a.get('timeout', 10.0),
                 timestamp=datetime.fromisoformat(a['timestamp']),
             )
-            for a in data.get('actions', [])
-        ]
+            if 'selector_chain' in a:
+                action.selector_chain = SelectorChain(**a['selector_chain'])
+            if 'form_fields' in a:
+                action.form_fields = a['form_fields']
+            actions.append(action)
 
         assertions = [
             WaypointAssertion(
@@ -205,6 +235,8 @@ class Waypoint(BaseModel):
             assertions=assertions,
             description=data.get('description', ''),
             version=data.get('version', '1.0'),
+            parent_hash=data.get('parent_hash'),
+            chain_version=data.get('chain_version', 1),
             created_at=datetime.fromisoformat(data.get('created_at', datetime.utcnow().isoformat())),
         )
         waypoint.update_hash()
@@ -241,6 +273,34 @@ class Waypoint(BaseModel):
         action = WaypointAction(
             action_type=action_type,
             selector=selector,
+            value=value,
+            timeout=timeout,
+        )
+        self.actions.append(action)
+
+    def add_action_with_chain(
+        self,
+        action_type: ActionType,
+        chain: SelectorChain,
+        value: Optional[str] = None,
+        timeout: float = 10.0,
+    ) -> None:
+        """
+        Add an action with a multi-candidate selector chain.
+
+        Sets both selector (from chain.primary_selector()) for legacy
+        compatibility and selector_chain for new verification.
+
+        Args:
+            action_type: Type of action.
+            chain: SelectorChain with ordered candidates.
+            value: Action value (optional).
+            timeout: Action timeout in seconds.
+        """
+        action = WaypointAction(
+            action_type=action_type,
+            selector=chain.primary_selector(),
+            selector_chain=chain,
             value=value,
             timeout=timeout,
         )
